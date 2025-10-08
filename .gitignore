@@ -12,7 +12,7 @@
 
 # Ignore all JENKINS_HOME except jobs directory, root xml config, and
 # .gitignore file.
-/*
+#/*
 !/jobs
 !/.gitignore
 !/*.xml
@@ -24,7 +24,7 @@ jobs/**
 
 # Uncomment the following line to save next build numbers with config.
 
-#!jobs/**/nextBuildNumber
+!jobs/**/nextBuildNumber
 
 # For performance reasons, we want to ignore builds in Jenkins jobs because it
 # contains many tiny files on large installations.  This can impact git
