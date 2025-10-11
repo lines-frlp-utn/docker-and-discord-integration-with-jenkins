@@ -4,6 +4,13 @@ pipeline {
         cron('*/2 * * * *')
     }
     
+    options {
+        buildDiscarder(logRotator(
+            daysToKeepStr: '30',
+            artifactDaysToKeepStr: '7',
+        ))
+    }
+    
     environment {
         CONTAINERS_TO_MONITOR = 'container1,container2'
         CONTAINERS_NOT_PRIMARY = 'container2'
@@ -103,7 +110,39 @@ Tiempo: ${new Date()}
             script {
                 // Si hay caídas de ALTA prioridad → FALLA CRÍTICA
                 if (env.UNEXPECTED_PRIORITY_STOPPED) {
-                    echo "Enviando notificación de fallo crítico"
+                    def alertFile = "${env.WORKSPACE}/last_high_priority_alert.txt"
+                    def currentHighPriority = env.UNEXPECTED_PRIORITY_STOPPED.split(',').collect { it.trim() }.sort()
+                    def now = System.currentTimeMillis()
+                    def resend = false
+                    def intervals = [30*60*1000, 60*60*1000, 6*60*60*1000, , 6*60*60*1000, , 12*60*60*1000] // 30m, 1h, 6h, 6h, 12h
+                
+                    if (fileExists(alertFile)) {
+                        def content = readFile(file: alertFile).trim()
+                        def (prevContainersStr, lastAlertStr) = content.tokenize('|')
+                        def previousContainers = prevContainersStr ? prevContainersStr.split(',').collect { it.trim() }.sort() : []
+                        def lastAlert = lastAlertStr?.isNumber() ? lastAlertStr.toLong() : 0L
+                
+                        def sameContainers = previousContainers == currentHighPriority
+                        def elapsed = now - lastAlert
+                
+                        if (sameContainers) {
+                            for (interval in intervals) {
+                                if (elapsed >= interval && elapsed < interval + (60*1000)) { // tolerancia 2 min
+                                    resend = true
+                                    break
+                                }
+                            }
+                        } else {
+                            // Cambió la lista → nuevo aviso
+                            resend = true
+                        }
+                    } else {
+                        // Primer aviso
+                        resend = true
+                    }
+                
+                    if (resend) {
+                        echo "🔁 Enviando aviso (nuevo o repetido por persistencia del problema)"
                     sendDiscordNotification(
                         "❌ **FALLA CRÍTICA**",
                         "Ha ocurrido una falla crítica en contenedores de alta prioridad.",
@@ -113,6 +152,29 @@ Tiempo: ${new Date()}
                             [name: "Contenedores unhealthy:", value: "${env.UNHEALTHY_CONTAINERS ?: 'Ninguno'}", inline: false]
                         ]
                     )
+                        writeFile file: alertFile, text: "${currentHighPriority.join(',')}|${now}"
+                    } else {
+                        echo "⏱️ No se cumple intervalo de reenvío, no se enviará aviso."
+                    }
+                } else {
+                    // Si ya no hay contenedores caídos, eliminamos el archivo de estado
+                    def alertFile = "${env.WORKSPACE}/last_high_priority_alert.txt"
+
+                    if (fileExists(alertFile)) {
+                        echo "🟢 Todos los contenedores de alta prioridad están activos. Limpiando estado..."
+                        sh "rm -f ${alertFile}"
+
+                        echo "Enviando notificación de fallo crítico"
+                        sendDiscordNotification(
+                            "✅ **PRIORITARIOS: FUNCIONANDO**",
+                            "Todos los contenedores de alta prioridad se encuentran funcionando.",
+                            "00FF00",
+                            [
+                                [name: "Contenedores de alta prioridad caídos:", value: "${env.UNEXPECTED_PRIORITY_STOPPED}", inline: false],
+                                [name: "Contenedores unhealthy:", value: "${env.UNHEALTHY_CONTAINERS ?: 'Ninguno'}", inline: false]
+                            ]
+                        )
+                    }
                 }
 
                 // Si hay BAJA prioridad → AVISO
@@ -121,7 +183,7 @@ Tiempo: ${new Date()}
                     def currentLowPriority = env.UNEXPECTED_NO_PRIORITY_STOPPED.split(',').collect { it.trim() }.sort()
                     def now = System.currentTimeMillis()
                     def resend = false
-                    def intervals = [10*60*1000, 60*60*1000, 6*60*60*1000] // 30 min, 1h, 6h
+                    def interval = 6*60*60*1000 //6h
                 
                     if (fileExists(alertFile)) {
                         def content = readFile(file: alertFile).trim()
@@ -133,11 +195,8 @@ Tiempo: ${new Date()}
                         def elapsed = now - lastAlert
                 
                         if (sameContainers) {
-                            for (interval in intervals) {
                                 if (elapsed >= interval && elapsed < interval + (2*60*1000)) { // tolerancia 2 min
                                     resend = true
-                                    break
-                                }
                             }
                         } else {
                             // Cambió la lista → nuevo aviso
@@ -165,9 +224,21 @@ Tiempo: ${new Date()}
                 } else {
                     // Si ya no hay contenedores caídos, eliminamos el archivo de estado
                     def alertFile = "${env.WORKSPACE}/last_low_priority_alert.txt"
+
                     if (fileExists(alertFile)) {
                         echo "🟢 Todos los contenedores de baja prioridad están activos. Limpiando estado..."
                         sh "rm -f ${alertFile}"
+
+                        echo "Enviando notificación de fallo crítico"
+                        sendDiscordNotification(
+                            "✅ **BAJA PRIORIDAD: FUNCIONANDO**",
+                            "Todos los contenedores de baja prioridad se encuentran funcionando.",
+                            "00FF00",
+                            [
+                                [name: "Contenedores de baja prioridad caídos:", value: "${env.UNEXPECTED_NO_PRIORITY_STOPPED}", inline: false],
+                                [name: "Contenedores unhealthy:", value: "${env.UNHEALTHY_CONTAINERS ?: 'Ninguno'}", inline: false]
+                            ]
+                        )
                     }
                 }
 
