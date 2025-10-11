@@ -1,4 +1,4 @@
-\# Docker Container Monitor
+# Docker Container Monitor
 
 A Jenkins pipeline for automated Docker container monitoring with Discord notifications.
 
