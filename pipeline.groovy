@@ -1,7 +1,7 @@
 pipeline {
     agent any
     triggers {
-        cron('*/2 * * * *')
+        cron('H/2 * * * *')
     }
     
     options {
@@ -114,7 +114,7 @@ Tiempo: ${new Date()}
                     def currentHighPriority = env.UNEXPECTED_PRIORITY_STOPPED.split(',').collect { it.trim() }.sort()
                     def now = System.currentTimeMillis()
                     def resend = false
-                    def intervals = [30*60*1000, 60*60*1000, 6*60*60*1000, , 6*60*60*1000, , 12*60*60*1000] // 30m, 1h, 6h, 6h, 12h
+                    def intervals = [30*60*1000, 60*60*1000, 6*60*60*1000, 6*60*60*1000, 12*60*60*1000] // 30m, 1h, 6h, 6h, 12h
                 
                     if (fileExists(alertFile)) {
                         def content = readFile(file: alertFile).trim()
